@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // JUMPCLOUD_API_V1_URL is the base URL for JumpCloud API v1
@@ -128,8 +130,13 @@ func (c *Client) DoRequestWithContext(ctx context.Context, method, path string, 
 	// Construct full URL
 	url := fmt.Sprintf("%s%s", c.APIURL, path)
 
-	// Log the full URL for debugging
-	fmt.Printf("DEBUG: Making request to URL: %s\n", url)
+	// Log the request for debugging. Routed through tflog so it is only
+	// emitted when TF_LOG is enabled, and the body is masked so secrets are
+	// never written to logs. The API key lives in a header and is never logged.
+	tflog.Debug(ctx, "Making JumpCloud API request", map[string]any{
+		"method": method,
+		"url":    url,
+	})
 
 	// Create HTTP request with context
 	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
@@ -158,7 +165,9 @@ func (c *Client) DoRequestWithContext(ctx context.Context, method, path string, 
 	defer func() {
 		if closeErr := resp.Body.Close(); closeErr != nil {
 			// Log the error but don't return it since we might already have a more important error
-			fmt.Printf("WARNING: Error closing response body: %v\n", closeErr)
+			tflog.Warn(ctx, "Error closing response body", map[string]any{
+				"error": closeErr.Error(),
+			})
 		}
 	}()
 
@@ -168,9 +177,12 @@ func (c *Client) DoRequestWithContext(ctx context.Context, method, path string, 
 		return nil, fmt.Errorf("error reading response body: %v", err)
 	}
 
-	// Log response status and body for debugging
-	fmt.Printf("DEBUG: Response status: %d\n", resp.StatusCode)
-	fmt.Printf("DEBUG: Response body: %s\n", string(respBody))
+	// Log response status and body for debugging. Routed through tflog and the
+	// body is masked so any secrets returned by the API are never logged.
+	tflog.Debug(ctx, "JumpCloud API response", map[string]any{
+		"status": resp.StatusCode,
+		"body":   MaskSensitive(respBody),
+	})
 
 	// Check for HTTP error status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

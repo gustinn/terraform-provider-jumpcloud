@@ -307,21 +307,32 @@ func (a *clientAdapter) doRequestInternal(method, path string, body interface{})
 		requestBody = v
 	}
 
-	// Log the request for debugging
-	fmt.Printf("DEBUG: Making API request: %s %s\n", method, path)
+	// Log the request for debugging. Routed through tflog (only emitted when
+	// TF_LOG is enabled) and the body is masked so secrets are never logged.
+	ctx := context.Background()
+	tflog.Debug(ctx, "Making JumpCloud API request", map[string]any{
+		"method": method,
+		"path":   path,
+	})
 	if requestBody != nil {
 		bodyBytes, _ := json.Marshal(requestBody)
-		fmt.Printf("DEBUG: Request body: %s\n", string(bodyBytes))
+		tflog.Debug(ctx, "JumpCloud API request body", map[string]any{
+			"body": apiclient.MaskSensitive(bodyBytes),
+		})
 	}
 
 	// Call the underlying API client
 	result, err := a.apiClient.DoRequest(method, path, requestBody)
 
-	// Log the response for debugging
+	// Log the response for debugging, with secrets masked.
 	if err != nil {
-		fmt.Printf("DEBUG: API request failed: %v\n", err)
+		tflog.Debug(ctx, "JumpCloud API request failed", map[string]any{
+			"error": err.Error(),
+		})
 	} else {
-		fmt.Printf("DEBUG: API response: %s\n", string(result))
+		tflog.Debug(ctx, "JumpCloud API response", map[string]any{
+			"body": apiclient.MaskSensitive(result),
+		})
 	}
 
 	return result, err
